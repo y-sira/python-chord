@@ -37,8 +37,9 @@ import dfs
 from time import time
 from subprocess import *
 
-import chord
-import json 
+from chord import Local
+from address import Address
+import json
 import base64
 
 fuse.fuse_python_api = (0, 2)
@@ -51,12 +52,12 @@ BLOCK_SIZE = 4096
 # default stat, not very useful
 class MyStat(fuse.Stat):
     def __init__(self):
-        self.st_mode = stat.S_IFDIR | 0755
+        self.st_mode = stat.S_IFDIR | 0o755
         self.st_dev = 0
         self.st_ino = 0
         self.st_nlink = 1
-        self.st_uid = 1000 # my uid
-        self.st_gid = 1000 # my gid
+        self.st_uid = 1000  # my uid
+        self.st_gid = 1000  # my gid
         self.st_size = 4096
         self.st_atime = 0
         self.st_mtime = 0
@@ -69,14 +70,16 @@ def log(info):
     f.write(info + "\n")
     f.close()
 
+
 # decorator to log every system call on our fs (strace equiv)
 def logtofile(func):
     def inner(self, *args, **kwargs):
         f = open("/tmp/dfs.log", "a+")
         f.write("Function %s called with parameters %s %s\n" % (func.__name__,
-                args, kwargs))
+                                                                args, kwargs))
         f.close()
         return func(self, *args, **kwargs)
+
     return inner
 
 
@@ -113,7 +116,7 @@ class FUSEDFS(fuse.Fuse):
         if obj == None:
             if path == '/':
                 log("Creating empty root folder")
-                obj = {'type':'directory', 'data':{'files':[]}}
+                obj = {'type': 'directory', 'data': {'files': []}}
                 put(path, obj)
             else:
                 log("File ' %s' doesn't exist" % path)
@@ -121,16 +124,16 @@ class FUSEDFS(fuse.Fuse):
 
         if obj['type'] == 'file':
             # if it's a file, set the file flag and get size
-            st.st_mode = stat.S_IFREG | 0666
+            st.st_mode = stat.S_IFREG | 0o666
             # we assume there's nothing bigger than 4G here. we do a binary search
             # to find the las block. This could be improved a lot with different
             # algorithms or ideas.
             left = 0
-            right = (1<<32)/BLOCK_SIZE
+            right = (1 << 32) / BLOCK_SIZE
             while left + 1 < right:
                 mid = (left + right) / 2
                 offsets = self.get_offsets(mid * BLOCK_SIZE, 1)
-                key = "%s:%s" %(path[1:], offsets[0])
+                key = "%s:%s" % (path[1:], offsets[0])
                 block = get(key)
                 if block != None:
                     left = mid
@@ -138,7 +141,7 @@ class FUSEDFS(fuse.Fuse):
                     right = mid
             # the total size is the sum of previous blocks plus the data stored
             # at block 'left'
-            key = "%s:%s" %(path[1:], left)
+            key = "%s:%s" % (path[1:], left)
             block = get(key)
             size = left * BLOCK_SIZE + len(base64.b64decode(block['data']['b64_data']))
 
@@ -147,7 +150,7 @@ class FUSEDFS(fuse.Fuse):
 
     @logtofile
     def readdir(self, path, offset):
-        files = [ "..", "." ]
+        files = ["..", "."]
         # right now we only support for '/', but this is general enough to support
         # folders in case we decide to implement mkdir
         directory = get(path)
@@ -171,8 +174,8 @@ class FUSEDFS(fuse.Fuse):
         # we only set the initial block
         key = "%s:0" % key
         obj = {'type': 'file',
-               'data': { 'b64_data': base64.b64encode("") }
-              }
+               'data': {'b64_data': base64.b64encode("")}
+               }
         put(key, obj)
 
         # logging
@@ -233,24 +236,23 @@ class FUSEDFS(fuse.Fuse):
 
         # if it doesn't exist, just return create it
         if obj == None:
-            obj = {'type':'file',
-                   'data':{'b64_data': None}
-            }
+            obj = {'type': 'file',
+                   'data': {'b64_data': None}
+                   }
 
             # fill up with 0x00's before
-            data = ("\00" * start) + buf[:end-start]
+            data = ("\00" * start) + buf[:end - start]
             obj['data']['b64_data'] = base64.b64encode(data)
 
         else:
             data = base64.b64decode(obj['data']['b64_data'])
             # this is the new data
-            data = data[:start] + buf[:end-start] + data[end:]
+            data = data[:start] + buf[:end - start] + data[end:]
             obj['data']['b64_data'] = base64.b64encode(data)
-
 
         # save into the DHT
         put(key, obj)
-        return int(end-start)
+        return int(end - start)
 
     @logtofile
     def release(self, path, flags):
@@ -286,7 +288,6 @@ class FUSEDFS(fuse.Fuse):
         data = base64.b64decode(obj['data']['b64_data'])
         obj['data']['b64_data'] = base64.b64encode(data[:end])
 
-
         put(key, obj)
         log("File %s truncated to %s" % (key, end))
         return 0
@@ -311,8 +312,9 @@ class FUSEDFS(fuse.Fuse):
     def fsync(self, path, isfsyncfile):
         return 0
 
+
 def main():
-    usage="""
+    usage = """
         FUSEDFS: A filesystem implemented on top of a DHT.
     """ + fuse.Fuse.fusage
 
@@ -326,6 +328,7 @@ def main():
                      usage=usage, dash_s_do='setsingle')
     server.parse(errex=1)
     server.main()
+
 
 if __name__ == '__main__':
     main()
